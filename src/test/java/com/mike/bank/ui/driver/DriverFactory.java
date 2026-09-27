@@ -41,5 +41,4 @@ public class DriverFactory {
         throw new RuntimeException("Unsupported browser: " + browser);
     }
 
-
 }
