@@ -25,8 +25,7 @@ jobs:
 
       - name: Start Banking API
         run: |
-          mvn -DskipTests spring-boot:run > spring-boot.log 2>&1 &
-          echo $! > spring-boot.pid
+          docker compose up --build -d
 
       - name: Wait for Banking API
         run: |
@@ -67,7 +66,4 @@ jobs:
 
       - name: Stop Banking API
         if: always()
-        run: |
-          if [ -f spring-boot.pid ]; then
-            kill $(cat spring-boot.pid) || true
-          fi
+        run: docker compose down
