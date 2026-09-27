@@ -31,16 +31,20 @@ jobs:
       - name: Wait for Banking API
         run: |
           for i in {1..30}; do
-            if curl --fail --silent http://localhost:8080/hello > /dev/null; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://localhost:8080/accounts || true)
+          
+            echo "Attempt $i: HTTP $STATUS"
+          
+            if [ "$STATUS" = "200" ]; then
               echo "Banking API is ready"
               exit 0
             fi
-
-            echo "Waiting for Banking API..."
+          
             sleep 2
           done
-
-          echo "Banking API failed to start"
+          
+          echo "Banking API failed to become ready"
           cat spring-boot.log
           exit 1
 
