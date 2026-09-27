@@ -47,8 +47,10 @@ public class LoginTest extends BaseTest {
 
         LoginPage loginPageAfterLogout = secureAreaPage.logout();
 
+        String actualMessage = loginPageAfterLogout.getFlashMessage();
+
         assertTrue(
-                loginPageAfterLogout.getFlashMessage().contains("You logged out of the secure area!")
+                loginPageAfterLogout.getFlashMessage().contains("You logged out of the secure area!"), "Actual flash message: [" + actualMessage + "]"
         );
     }
 

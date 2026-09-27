@@ -23,13 +23,6 @@ public class BankServiceMockitoTest {
     private BankService bankService;
 
     @Test
-    void example(){
-        AccountRepository repository = mock(AccountRepository.class);
-
-        BankService bankService = new BankService(repository);
-    }
-
-    @Test
     void findAccountShouldReturnAccountWhenRepositoryFindsIt(){
 
         SavingsAccount savingsAccount = new SavingsAccount("ACC1001", 1000, "Mike");
@@ -98,7 +91,7 @@ public class BankServiceMockitoTest {
         verify(repository).findByAccountNumber("ACC1000");
         verify(repository).remove("ACC1000");
 
-        verifyNoInteractions(repository);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
