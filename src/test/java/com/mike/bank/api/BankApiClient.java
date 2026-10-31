@@ -30,7 +30,6 @@ public class BankApiClient {
         return given()
                 .spec(requestSpec)
                 .pathParam("accountNumber", accountNumber)
-                .log().all()
         .when()
                 .get("/accounts/{accountNumber}");
     }

@@ -346,7 +346,7 @@ public class BankApiRestAssuredTest {
         Response beforeResponse =
                 bankApiClient.getAccount(accountNumber);
 
-        float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
+        BigDecimal balanceBefore = beforeResponse.jsonPath().getObject("balance", BigDecimal.class);
 
         AmountRequest depositRequest =
                 TestDataFactory.createAmountRequest(-100);
@@ -361,7 +361,7 @@ public class BankApiRestAssuredTest {
         Response afterResponse = bankApiClient.getAccount(accountNumber);
 
 
-        float balanceAfter = afterResponse.path("balance");
+        BigDecimal balanceAfter = afterResponse.jsonPath().getObject("balance", BigDecimal.class);
 
         assertEquals(balanceBefore, balanceAfter);
     }
