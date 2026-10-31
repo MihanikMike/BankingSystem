@@ -63,7 +63,7 @@ public class BankController {
     }
 
     @PostMapping("/{accountNumber}/deposit")
-    public ResponseEntity<BankAccount> deposit(
+    public ResponseEntity<Void> deposit(
             @PathVariable String accountNumber,
             @RequestBody AmountRequest request) {
 
@@ -82,6 +82,19 @@ public class BankController {
 
         return ResponseEntity.noContent().build();
 
+    }
+
+    @PostMapping("/transfer")
+    public ResponseEntity<Void> transfer(
+            @RequestBody TransferRequest request){
+
+        bankService.transfer(
+                request.getFromAccount(),
+                request.getToAccount(),
+                request.getAmount()
+        );
+
+        return ResponseEntity.noContent().build();
     }
 
 }

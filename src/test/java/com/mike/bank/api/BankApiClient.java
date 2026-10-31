@@ -2,6 +2,7 @@ package com.mike.bank.api;
 
 import com.mike.bank.AmountRequest;
 import com.mike.bank.CreateAccountRequest;
+import com.mike.bank.TransferRequest;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
@@ -67,6 +68,16 @@ public class BankApiClient {
                 .body(request)
         .when()
                 .post("/accounts/{accountNumber}/withdraw");
+    }
+
+    public Response transfer(TransferRequest request){
+
+        return
+                given()
+                        .spec(requestSpec)
+                        .body(request)
+                        .when()
+                        .post("/accounts/transfer");
     }
 
 }

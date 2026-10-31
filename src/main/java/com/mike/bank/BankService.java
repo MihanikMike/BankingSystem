@@ -46,4 +46,36 @@ public class BankService {
         return repository.findAll();
     }
 
+    public void transfer(String fromAccount,
+                         String toAccount, double amount){
+
+        if(!Double.isFinite(amount)){
+            throw new IllegalArgumentException(
+                    "Transfer amount must be finite"
+            );
+        }
+
+        if(amount <= 0){
+            throw new IllegalArgumentException(
+                    "Transfer amount must be greater than 0"
+            );
+        }
+
+        if(fromAccount.equals(toAccount)){
+            throw new IllegalArgumentException(
+                    "Cannot transfer to the same account"
+            );
+        }
+
+        BankAccount sender = getAccountOrThrow(fromAccount);
+        BankAccount receiver = getAccountOrThrow(toAccount);
+
+        if(amount > sender.getBalance()){
+            throw new InsufficientFundsException(sender.getBalance(), amount);
+        }
+
+        sender.withdraw(amount);
+        receiver.deposit(amount);
+
+    }
 }
