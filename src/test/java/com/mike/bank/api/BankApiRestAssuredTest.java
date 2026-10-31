@@ -3,12 +3,17 @@ package com.mike.bank.api;
 import com.mike.bank.AccountResponse;
 import com.mike.bank.AmountRequest;
 import com.mike.bank.CreateAccountRequest;
+import com.mike.bank.TransferRequest;
+import com.mike.bank.data.TestDataFactory;
+import io.restassured.config.JsonConfig;
+import io.restassured.config.RestAssuredConfig;
+import io.restassured.path.json.config.JsonPathConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.*;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.*;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.restassured.http.ContentType;
@@ -17,15 +22,20 @@ import io.restassured.RestAssured;
 import org.junit.jupiter.api.BeforeAll;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.specification.RequestSpecification;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import java.util.UUID;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 
 public class BankApiRestAssuredTest {
 
     private static RequestSpecification requestSpec;
     private static BankApiClient bankApiClient;
-    private String testAccountNumber;
+    private final List<String> testAccountNumbers = new ArrayList<>();
 
     @BeforeAll
     static void setup(){
@@ -34,6 +44,11 @@ public class BankApiRestAssuredTest {
                 .setBaseUri("http://localhost")
                 .setPort(8080)
                 .setContentType(ContentType.JSON)
+                .setConfig(RestAssuredConfig.config()
+                        .jsonConfig(JsonConfig.jsonConfig()
+                                .numberReturnType(
+                                        JsonPathConfig.NumberReturnType.BIG_DECIMAL
+                                )))
                 .build();
 
         bankApiClient = new BankApiClient(requestSpec);
@@ -44,38 +59,39 @@ public class BankApiRestAssuredTest {
     @AfterEach
     void cleanup(){
 
-        if(testAccountNumber != null){
-            bankApiClient.deleteAccount(testAccountNumber);
+        try {
+            for(String accountNumber : testAccountNumbers){
+                bankApiClient.deleteAccount(accountNumber)
+                        .then()
+                        .statusCode(204);
+
+                bankApiClient.getAccount(accountNumber)
+                        .then()
+                        .statusCode(404);
+            }
+        }finally{
+            testAccountNumbers.clear();
         }
     }
 
-    private String generateAccountNumber(){
+    private String createTestAccount(double balance, String owner){
 
-        return "ACC-" + UUID.randomUUID()
-                .toString()
-                .substring(0, 8);
-    }
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
-    private CreateAccountRequest createAccountRequest(
-            String accountNumber,
-            double balance,
-            String owner) {
+        CreateAccountRequest request = TestDataFactory.createAccountRequest(accountNumber, balance, owner);
 
-        CreateAccountRequest request = new CreateAccountRequest();
+        Response createResponse = bankApiClient.createAccount(request);
 
-        request.setAccountNumber(accountNumber);
-        request.setBalance(balance);
-        request.setOwner(owner);
+        String createdAccountNumber = createResponse
+                        .then()
+                        .statusCode(201)
+                        .extract()
+                        .path("accountNumber");
 
-        return request;
-    }
+        testAccountNumbers.add(createdAccountNumber);
 
-    private AmountRequest createAmountRequest(double amount){
+        return createdAccountNumber;
 
-        AmountRequest request = new AmountRequest();
-        request.setAmount(amount);
-
-        return request;
     }
 
     @Test
@@ -103,8 +119,13 @@ public class BankApiRestAssuredTest {
                 .then()
                 .statusCode(200)
                 .body("accountNumber", equalTo(accountNumber))
-                .body("owner", equalTo("Mike"))
-                .body("balance", equalTo(1000.0f));
+                .body("owner", equalTo("Mike"));
+
+        BigDecimal actualBalance = response.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal expectedBalance = new BigDecimal("1200.00");
+
+        assertEquals(0, expectedBalance.compareTo(actualBalance));
     }
 
     @Test
@@ -124,29 +145,28 @@ public class BankApiRestAssuredTest {
     @Test
     void createAccountShouldReturn201AndCreatedAccount(){
 
-        CreateAccountRequest request = createAccountRequest("ACC3001", 1500, "Alex");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest("ACC1005", 1500, "Alex");
 
         // Create account
-        given()
-                .spec(requestSpec)
-                .body(request)
+        Response createResponse = bankApiClient.createAccount(request);
 
-        .when()
-                .post("/accounts")
-
-        .then()
+        createResponse.then()
                 .statusCode(201)
-                .body("accountNumber", equalTo("ACC3001"))
-                .body("owner", equalTo("Alex"))
-                .body("balance", equalTo(1500.0f));
+                .body("accountNumber", equalTo("ACC1005"))
+                .body("owner", equalTo("Alex"));
 
+        BigDecimal actualBalance = createResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal expectedBalance = new BigDecimal("1500");
+
+        assertEquals(0, expectedBalance.compareTo(actualBalance));
 
     }
 
     @Test
     void createdAccountShouldBeRetrievable(){
 
-        CreateAccountRequest request = createAccountRequest("ACC3002", 2000, "David");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest("ACC3002", 2000, "David");
 
         // Create account
         Response createResponse = bankApiClient.createAccount(request);
@@ -160,47 +180,55 @@ public class BankApiRestAssuredTest {
                 .then()
                 .statusCode(200)
                 .body("accountNumber", equalTo("ACC3002"))
-                .body("owner", equalTo("David"))
-                .body("balance", equalTo(2000.0f));
+                .body("owner", equalTo("David"));
+
+        BigDecimal actualBalance = getResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal expectedBalance = new BigDecimal("2000");
+
+        assertEquals(0, expectedBalance.compareTo(actualBalance));
 
     }
 
     @Test
     void createdAccountShouldBeRetrievableUsingExtract(){
 
-        CreateAccountRequest request =
-                new CreateAccountRequest();
-        request.setAccountNumber("ACC4001");
-        request.setBalance(1800);
-        request.setOwner("Chris");
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
-        String createdAccountNumber =
-                given()
-                        .spec(requestSpec)
-                        .body(request)
-                .when()
-                        .post("/accounts")
+        CreateAccountRequest request = TestDataFactory.createAccountRequest(accountNumber, 1800, "Chris");
+
+        Response createResponse = bankApiClient.createAccount(request);
+
+        createResponse.then().statusCode(201);
+
+        testAccountNumbers.add(accountNumber);
+
+        String createdAccountNumber = createResponse
                 .then()
-                        .statusCode(201)
-                        .extract()
-                        .path("accountNumber");
+                .statusCode(201)
+                .extract()
+                .path("accountNumber");
 
-        given()
-                .spec(requestSpec)
-                .pathParam("accountNumber", createdAccountNumber)
-        .when()
-                .get("/accounts/{accountNumber}")
-        .then()
+        Response getResponse = bankApiClient.getAccount(accountNumber);
+
+        getResponse
+                .then()
                 .statusCode(200)
-                .body("accountNumber", equalTo(createdAccountNumber))
-                .body("owner", equalTo("Chris"))
-                .body("balance", equalTo(1800.0f));
+                .body("accountNumber", equalTo(accountNumber))
+                .body("owner", equalTo("Chris"));
+
+        BigDecimal actualBalance = getResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal expecterBalance = new BigDecimal("1800");
+
+        assertEquals(0, expecterBalance.compareTo(actualBalance));
+
     }
 
     @Test
     void shouldCreateAccountAndReadResponse(){
 
-        CreateAccountRequest request = createAccountRequest("ACC5001", 2200, "Emma");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest("ACC5001", 2200, "Emma");
 
         Response response = bankApiClient.createAccount(request);
 
@@ -217,7 +245,7 @@ public class BankApiRestAssuredTest {
     @Test
     void shouldDeserializeCreatedAccountResponse(){
 
-        CreateAccountRequest request = createAccountRequest("ACC6001", 3000, "Tom");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest("ACC6001", 3000, "Tom");
 
         Response response = bankApiClient.createAccount(request);
 
@@ -233,12 +261,10 @@ public class BankApiRestAssuredTest {
     @Test
     void deleteAccountShouldReturn204AndAccountShouldDisappear(){
 
-        String accountNumber = generateAccountNumber();
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
-        testAccountNumber = accountNumber;
-
-        CreateAccountRequest request = createAccountRequest(
-                testAccountNumber, 1000, "Delete Test");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest(
+                accountNumber, 1000, "Delete Test");
 
         Response createResponse =
                 bankApiClient.createAccount(request);
@@ -246,7 +272,7 @@ public class BankApiRestAssuredTest {
         assertEquals(201, createResponse.getStatusCode());
 
         Response deleteResponse =
-                bankApiClient.deleteAccount(testAccountNumber);
+                bankApiClient.deleteAccount(accountNumber);
 
         assertEquals(204, deleteResponse.getStatusCode());
 
@@ -259,7 +285,6 @@ public class BankApiRestAssuredTest {
                 .statusCode(404)
                 .body("error", equalTo("ACCOUNT_NOT_FOUND"));
 
-        testAccountNumber = null;
     }
 
     @Test
@@ -280,29 +305,37 @@ public class BankApiRestAssuredTest {
     @Test
     void depositShouldReturn204AndIncreaseBalance(){
 
-        testAccountNumber = generateAccountNumber();
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
         CreateAccountRequest createRequest =
-                createAccountRequest(testAccountNumber, 1000, "Deposit Test");
+        TestDataFactory.createAccountRequest(accountNumber, 1000, "Deposit Test");
 
         Response createResponse = bankApiClient.createAccount(createRequest);
 
         assertEquals(201, createResponse.getStatusCode());
 
-            AmountRequest depositRequest =
-                    createAmountRequest(250);
+        testAccountNumbers.add(accountNumber);
 
-            Response depositResponse = bankApiClient.deposit(testAccountNumber, depositRequest);
+            AmountRequest depositRequest =
+        TestDataFactory.createAmountRequest(250);
+
+            Response depositResponse = bankApiClient.deposit(accountNumber, depositRequest);
 
             assertEquals(204, depositResponse.getStatusCode());
 
             Response getResponse =
-                    bankApiClient.getAccount(testAccountNumber);
+                    bankApiClient.getAccount(accountNumber);
 
             getResponse
                     .then()
-                    .statusCode(200)
-                    .body("balance", equalTo(1250.0f));
+                    .statusCode(200);
+
+            BigDecimal actualBalance = getResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+            BigDecimal expectedBalance = new BigDecimal("1250");
+
+            assertEquals(0, expectedBalance.compareTo(actualBalance));
+
     }
 
     @Test
@@ -313,10 +346,10 @@ public class BankApiRestAssuredTest {
         Response beforeResponse =
                 bankApiClient.getAccount(accountNumber);
 
-        float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
+        BigDecimal balanceBefore = beforeResponse.jsonPath().getObject("balance", BigDecimal.class);
 
         AmountRequest depositRequest =
-                createAmountRequest(-100);
+                TestDataFactory.createAmountRequest(-100);
 
         Response depositResponse = bankApiClient.deposit(accountNumber,depositRequest);
 
@@ -328,7 +361,7 @@ public class BankApiRestAssuredTest {
         Response afterResponse = bankApiClient.getAccount(accountNumber);
 
 
-        float balanceAfter = afterResponse.path("balance");
+        BigDecimal balanceAfter = afterResponse.jsonPath().getObject("balance", BigDecimal.class);
 
         assertEquals(balanceBefore, balanceAfter);
     }
@@ -336,12 +369,10 @@ public class BankApiRestAssuredTest {
     @Test
     void withdrawShouldReturn204AndDecreaseBalance(){
 
-        String accountNumber = generateAccountNumber();
-
-        testAccountNumber = accountNumber;
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
         CreateAccountRequest createRequest =
-                createAccountRequest(accountNumber, 1000, "Deposit Test");
+        TestDataFactory.createAccountRequest(accountNumber, 1000, "Deposit Test");
 
         Response createResponse = bankApiClient.createAccount(createRequest);
 
@@ -353,7 +384,7 @@ public class BankApiRestAssuredTest {
         float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
 
         AmountRequest withdrawRequest =
-                createAmountRequest(100);
+                TestDataFactory.createAmountRequest(100);
 
         Response withdrawResponse = bankApiClient.withdraw(accountNumber, withdrawRequest);
 
@@ -382,7 +413,7 @@ public class BankApiRestAssuredTest {
         float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
 
         AmountRequest withdrawRequest =
-                createAmountRequest(-100);
+                TestDataFactory.createAmountRequest(-100);
 
         Response withdrawResponse = bankApiClient.withdraw(accountNumber, withdrawRequest);
 
@@ -408,7 +439,7 @@ public class BankApiRestAssuredTest {
         float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
 
         float withdrawAmount = balanceBefore + 100;
-        AmountRequest withdrawRequest = createAmountRequest(withdrawAmount);
+        AmountRequest withdrawRequest = TestDataFactory.createAmountRequest(withdrawAmount);
 
         Response withdrawResponse = bankApiClient.withdraw(accountNumber, withdrawRequest);
 
@@ -430,7 +461,7 @@ public class BankApiRestAssuredTest {
 
         String accountNumber = "ACC9999";
 
-        AmountRequest depositRequest = createAmountRequest(100);
+        AmountRequest depositRequest = TestDataFactory.createAmountRequest(100);
 
         Response depositResponse = bankApiClient.deposit(accountNumber, depositRequest);
 
@@ -444,17 +475,15 @@ public class BankApiRestAssuredTest {
     @Test
     void fullAccountLifecycleShouldWork(){
 
-        String accountNumber = generateAccountNumber();
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
-        testAccountNumber = accountNumber;
-
-        CreateAccountRequest createRequest = createAccountRequest(accountNumber, 1000, "Test Account");
+        CreateAccountRequest createRequest = TestDataFactory.createAccountRequest(accountNumber, 1000, "Test Account");
 
         Response createResponse = bankApiClient.createAccount(createRequest);
 
         assertEquals(201, createResponse.getStatusCode());
 
-        AmountRequest amountDeposit = createAmountRequest(250);
+        AmountRequest amountDeposit = TestDataFactory.createAmountRequest(250);
 
         Response depositResponse = bankApiClient.deposit(accountNumber, amountDeposit);
 
@@ -462,7 +491,7 @@ public class BankApiRestAssuredTest {
                 .then()
                 .statusCode(204);
 
-        AmountRequest amountWithdraw = createAmountRequest(100);
+        AmountRequest amountWithdraw = TestDataFactory.createAmountRequest(100);
 
         Response withdrawResponse = bankApiClient.withdraw(accountNumber, amountWithdraw);
 
@@ -475,8 +504,13 @@ public class BankApiRestAssuredTest {
 
         getResponse
                 .then()
-                .statusCode(200)
-                .body("balance", equalTo(1150.0f));
+                .statusCode(200);
+
+        BigDecimal actualBalance = getResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal expectedBalance = new BigDecimal("1150");
+
+        assertEquals(0, expectedBalance.compareTo(actualBalance));
 
         Response deleteResponse = bankApiClient.deleteAccount(accountNumber);
 
@@ -491,24 +525,20 @@ public class BankApiRestAssuredTest {
                 .statusCode(404)
                 .body("error", equalTo("ACCOUNT_NOT_FOUND"));
 
-        testAccountNumber = null;
-
     }
 
     @Test
     void accountBalanceShouldRemainCorrectAfterValidAndInvalidTransactions(){
 
-        String accountNumber = generateAccountNumber();
+        String accountNumber = TestDataFactory.generateAccountNumber();
 
-        testAccountNumber = accountNumber;
-
-        CreateAccountRequest createRequest = createAccountRequest(accountNumber, 2000, "Final Test");
+        CreateAccountRequest createRequest = TestDataFactory.createAccountRequest(accountNumber, 2000, "Final Test");
 
         Response createResponse = bankApiClient.createAccount(createRequest);
 
         assertEquals(201, createResponse.getStatusCode());
 
-        AmountRequest amountDeposit = createAmountRequest(500);
+        AmountRequest amountDeposit = TestDataFactory.createAmountRequest(500);
 
         Response depositResponse = bankApiClient.deposit(accountNumber, amountDeposit);
 
@@ -516,7 +546,7 @@ public class BankApiRestAssuredTest {
                 .then()
                 .statusCode(204);
 
-        AmountRequest amountNegativeRequest = createAmountRequest(-200);
+        AmountRequest amountNegativeRequest = TestDataFactory.createAmountRequest(-200);
 
         Response withdrawNegativeResponse = bankApiClient.withdraw(accountNumber, amountNegativeRequest);
 
@@ -525,7 +555,7 @@ public class BankApiRestAssuredTest {
                 .statusCode(400)
                 .body("error", equalTo("INVALID_ARGUMENT"));
 
-        AmountRequest amountRequest = createAmountRequest(300);
+        AmountRequest amountRequest = TestDataFactory.createAmountRequest(300);
 
         Response withdrawResponse = bankApiClient.withdraw(accountNumber, amountRequest);
 
@@ -558,8 +588,386 @@ public class BankApiRestAssuredTest {
                 .statusCode(404)
                 .body("error", equalTo("ACCOUNT_NOT_FOUND"));
 
-        testAccountNumber = null;
     }
 
+    @Test
+    void depositValidAmountShouldUpdateBalance(){
+
+        String accountNumber = "ACC1001";
+
+        Response beforeResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", accountNumber)
+                        .log().all()
+                        .when()
+                        .get("/accounts/{accountNumber}");
+
+        float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
+
+        AmountRequest depositRequest = new AmountRequest();
+        depositRequest.setAmount(200);
+
+        Response depositResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", accountNumber)
+                        .body(depositRequest)
+                  .when()
+                         .post("/accounts/{accountNumber}/deposit");
+
+        depositResponse
+                .then()
+                .statusCode(204);
+
+        Response afterResponse = bankApiClient.getAccount(accountNumber);
+
+        float balanceAfter = afterResponse.jsonPath().getFloat("balance");
+
+        assertEquals(balanceBefore + 200, balanceAfter, 0.01f);
+
+    }
+
+    @Test
+    void depositNegativeAmountShouldReturn400(){
+
+        String accountNumber = "ACC1002";
+
+        Response beforeResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", accountNumber)
+                        .log().all()
+                        .when()
+                        .get("/accounts/{accountNumber}");
+        beforeResponse
+                .then()
+                .statusCode(200);
+
+        float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
+
+        AmountRequest depositRequest = new AmountRequest();
+        depositRequest.setAmount(-200);
+
+        Response depositResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", accountNumber)
+                        .body(depositRequest)
+                        .when()
+                        .post("accounts/{accountNumber}/deposit");
+
+        depositResponse
+                .then()
+                .statusCode(400);
+
+        Response afterResponse = bankApiClient.getAccount(accountNumber);
+        afterResponse
+                .then()
+                .statusCode(200);
+
+        float balanceAfter = afterResponse.jsonPath().getFloat("balance");
+
+        assertEquals(balanceBefore, balanceAfter, 0.01f);
+
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1, -100, -9999})
+    void depositInvalidAmountShouldReturn400(int amount) {
+
+        String accountNumber = TestDataFactory.generateAccountNumber();
+
+        CreateAccountRequest request = TestDataFactory.createAccountRequest(accountNumber, 2000, "Invalid Amount Test");
+
+        String createdAccountNumber =
+                given()
+                        .spec(requestSpec)
+                        .body(request)
+                        .when()
+                        .post("/accounts")
+                        .then()
+                        .statusCode(201)
+                        .extract()
+                        .path("accountNumber");
+
+        AmountRequest depositRequest = new AmountRequest();
+
+        Response beforeResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", createdAccountNumber)
+                        .log().all()
+                        .when()
+                        .get("accounts/{accountNumber}");
+
+        beforeResponse
+                .then()
+                .statusCode(200);
+
+        float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
+
+        depositRequest.setAmount(amount);
+
+        Response depositResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParams("accountNumber", createdAccountNumber)
+                        .body(depositRequest)
+                        .when()
+                        .post("accounts/{accountNumber}/deposit");
+
+        depositResponse
+                .then()
+                .statusCode(400);
+
+
+        Response afterResponse =
+                given()
+                        .spec(requestSpec)
+                        .pathParam("accountNumber", createdAccountNumber)
+                        .log().all()
+                        .when()
+                        .get("accounts/{accountNumber}");
+
+        afterResponse
+                .then()
+                .statusCode(200);
+
+        float balanceAfter = afterResponse.jsonPath().getFloat("balance");
+
+        assertEquals(balanceBefore, balanceAfter, 0.01f);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "-1, 400",
+            "0, 400",
+            "1, 204",
+            "2, 204",
+            "4999, 204",
+            "5000, 204",
+            "5001, 204"
+    })
+    void depositBoundaryValuesTest(int amount, int expectedStatus){
+
+        String createdAccount = createTestAccount(2000, "Boundary Values Test");
+
+        Response beforeResponse = bankApiClient.getAccount(createdAccount);
+
+        beforeResponse
+                .then()
+                .statusCode(200);
+
+        BigDecimal balanceBefore = beforeResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        AmountRequest depositRequest = TestDataFactory.createAmountRequest(amount);
+
+        Response depositResponse = bankApiClient.deposit(createdAccount, depositRequest);
+
+        depositResponse
+                .then()
+                .statusCode(expectedStatus);
+
+        Response afterResponse = bankApiClient.getAccount(createdAccount);
+
+        afterResponse
+                .then()
+                .statusCode(200);
+
+        BigDecimal balanceAfter = afterResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        if(expectedStatus == 204) {
+
+            BigDecimal depositAmount = BigDecimal.valueOf(amount);
+
+            BigDecimal expectedBalance = balanceBefore.add(depositAmount);
+
+                    assertEquals(0, expectedBalance.compareTo(balanceAfter),
+                            "Balance mismatch. Expected: " + expectedBalance
+                                    + ", Actual: " + balanceAfter);
+
+        }else{
+            assertEquals(0, balanceBefore.compareTo(balanceAfter));
+
+        }
+    }
+
+    @Test
+    void transferValidAmountShouldUpdateBothBalances(){
+
+        String senderTestAccount = createTestAccount(2000, "Sender Test Account");
+
+        String receiverTestAccount  = createTestAccount(1000, "Receiver Test Account");
+
+        Response beforeResponseSender = bankApiClient.getAccount(senderTestAccount);
+        beforeResponseSender
+                .then()
+                .statusCode(200);
+
+        BigDecimal balanceBeforeSender = beforeResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        Response beforeResponseReceiver = bankApiClient.getAccount(receiverTestAccount);
+
+        beforeResponseReceiver
+                .then()
+                .statusCode(200);
+
+
+        BigDecimal balanceBeforeReceiver = beforeResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+
+        TransferRequest transferRequest = new TransferRequest();
+
+        transferRequest.setFromAccount(senderTestAccount);
+        transferRequest.setToAccount(receiverTestAccount);
+        transferRequest.setAmount(500);
+
+        Response transferResponse =
+                bankApiClient.transfer(transferRequest);
+
+        transferResponse.then().statusCode(204);
+
+        Response afterResponseSender = bankApiClient.getAccount(senderTestAccount);
+        afterResponseSender.then().statusCode(200);
+
+        Response afterResponseReceiver = bankApiClient.getAccount(receiverTestAccount);
+        afterResponseReceiver.then().statusCode(200);
+
+        BigDecimal afterBalanceSender = afterResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+        BigDecimal afterBalanceReceiver = afterResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal transferAmount = BigDecimal.valueOf(500);
+
+        BigDecimal expectedSenderBalance = balanceBeforeSender.subtract(transferAmount);
+        BigDecimal expectedReceiverBalance = balanceBeforeReceiver.add(transferAmount);
+
+
+        assertEquals(0, expectedSenderBalance.compareTo(afterBalanceSender));
+        assertEquals(0, expectedReceiverBalance.compareTo(afterBalanceReceiver));
+
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-100, 400",
+            "-1, 400",
+            "0, 400"})
+    void transferInvalidAmountShouldReturn400(double amount, int expectedStatus){
+
+        String sender = createTestAccount(2000, "Sender Test Account");
+
+        String receiver = createTestAccount(1000, "Receiver Test Account");
+
+        Response beforeResponseSender = bankApiClient.getAccount(sender);
+
+        beforeResponseSender.then().statusCode(200);
+
+        Response beforeResponseReceiver = bankApiClient.getAccount(receiver);
+        beforeResponseReceiver.then().statusCode(200);
+
+        BigDecimal balanceBeforeSender = beforeResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal balanceBeforeReceiver = beforeResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+        TransferRequest transferRequest = new TransferRequest();
+
+        transferRequest.setFromAccount(sender);
+        transferRequest.setToAccount(receiver);
+        transferRequest.setAmount(amount);
+
+        Response transferResponse = bankApiClient.transfer(transferRequest);
+
+        transferResponse.then().statusCode(expectedStatus);
+
+        Response afterResponseSender = bankApiClient.getAccount(sender);
+        afterResponseSender.then().statusCode(200);
+
+        Response afterResponseReceiver = bankApiClient.getAccount(receiver);
+        afterResponseReceiver.then().statusCode(200);
+
+        BigDecimal balanceAfterSender = afterResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal balanceAfterReceiver = afterResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal transferAmount = BigDecimal.valueOf(amount);
+
+        assertEquals(0, balanceBeforeSender.compareTo(balanceAfterSender));
+        assertEquals(0, balanceBeforeReceiver.compareTo(balanceAfterReceiver));
+    }
+
+    @Test
+    void transferInsufficientFundsShouldNotChangeBalances(){
+
+        String sender = createTestAccount(2000, "Sender Test Account");
+
+        String receiver = createTestAccount(1000, "Receiver Test Account");
+
+        Response beforeResponseSender = bankApiClient.getAccount(sender);
+
+        beforeResponseSender.then().statusCode(200);
+
+        Response beforeResponseReceiver = bankApiClient.getAccount(receiver);
+        beforeResponseReceiver.then().statusCode(200);
+
+        BigDecimal balanceBeforeSender = beforeResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal balanceBeforeReceiver = beforeResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+        TransferRequest transferRequest = new TransferRequest();
+
+        transferRequest.setFromAccount(sender);
+        transferRequest.setToAccount(receiver);
+        transferRequest.setAmount(2500);
+
+        Response transferResponse = bankApiClient.transfer(transferRequest);
+
+        transferResponse.then().statusCode(400);
+
+        Response afterResponseSender = bankApiClient.getAccount(sender);
+        afterResponseSender.then().statusCode(200);
+
+        Response afterResponseReceiver = bankApiClient.getAccount(receiver);
+        afterResponseReceiver.then().statusCode(200);
+
+        BigDecimal balanceAfterSender = afterResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        BigDecimal balanceAfterReceiver = afterResponseReceiver.jsonPath().getObject("balance", BigDecimal.class);
+
+        assertEquals(0, balanceBeforeSender.compareTo(balanceAfterSender),"Sender balance should not change");
+        assertEquals(0, balanceBeforeReceiver.compareTo(balanceAfterReceiver),"Receiver balance should not change");
+
+    }
+
+    @Test
+    void transferToNonexistingAccountShouldReturn404(){
+
+        String sender = createTestAccount(2000, "Sender");
+
+        String receiver = "ACC-NONEXISTENT";
+
+        Response beforeResponseSender = bankApiClient.getAccount(sender);
+
+        beforeResponseSender.then().statusCode(200);
+
+        BigDecimal balanceBeforeSender = beforeResponseSender.jsonPath().getObject("balance", BigDecimal.class);
+
+        TransferRequest transferRequest = new TransferRequest();
+
+        transferRequest.setFromAccount(sender);
+        transferRequest.setToAccount(receiver);
+        transferRequest.setAmount(500);
+
+        Response transferResponse = bankApiClient.transfer(transferRequest);
+
+        transferResponse.then().statusCode(404);
+
+        Response afterSenderResponse = bankApiClient.getAccount(sender);
+
+        afterSenderResponse.then().statusCode(200);
+
+        BigDecimal balanceAfterSender = afterSenderResponse.jsonPath().getObject("balance", BigDecimal.class);
+
+        assertEquals(0, balanceBeforeSender.compareTo(balanceAfterSender), "Sender balance must remain unchanged when receiver does not exist");
+    }
 
 }
