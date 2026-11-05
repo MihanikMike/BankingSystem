@@ -69,4 +69,6 @@ jobs:
 
       - name: Stop Banking API
         if: always()
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: docker compose down
