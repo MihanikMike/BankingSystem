@@ -1,6 +1,7 @@
 package com.mike.bank;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,13 +29,18 @@ public class BankService {
 
     public void deposit(String accountNumber, double amount){
         BankAccount account = getAccountOrThrow(accountNumber);
+
         account.deposit(amount);
+
+        repository.updateBalance(account);
     }
 
     public void withdraw(String accountNumber, double amount){
         BankAccount account = getAccountOrThrow(accountNumber);
+
         account.withdraw(amount);
 
+        repository.updateBalance(account);
     }
 
     public void remove(String accountNumber){
@@ -46,6 +52,7 @@ public class BankService {
         return repository.findAll();
     }
 
+    @Transactional
     public void transfer(String fromAccount,
                          String toAccount, double amount){
 
@@ -76,6 +83,9 @@ public class BankService {
 
         sender.withdraw(amount);
         receiver.deposit(amount);
+
+        repository.updateBalance(sender);
+        repository.updateBalance(receiver);
 
     }
 }
