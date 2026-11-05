@@ -4,6 +4,11 @@ import com.mike.bank.ui.base.BaseTest;
 import com.mike.bank.ui.pages.LoginPage;
 import com.mike.bank.ui.pages.SecureAreaPage;
 import org.junit.jupiter.api.Test;
+import org.openqa.selenium.By;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,7 +52,7 @@ public class LoginTest extends BaseTest {
 
         LoginPage loginPageAfterLogout = secureAreaPage.logout();
 
-        String actualMessage = loginPageAfterLogout.getFlashMessage();
+        String actualMessage = loginPageAfterLogout.waitForFlashMessage("You logged out of the secure area!");
 
         assertTrue(
                 actualMessage.contains("You logged out of the secure area!"), "Expected logout message, but was: [" + actualMessage + "]"

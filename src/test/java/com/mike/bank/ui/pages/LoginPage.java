@@ -4,6 +4,10 @@ import com.mike.bank.ui.base.BasePage;
 import com.mike.bank.ui.config.ConfigReader;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
 
 
 public class LoginPage extends BasePage {
@@ -73,5 +77,15 @@ public class LoginPage extends BasePage {
     public boolean isLoginButtonEnabled(){
 
         return waitForClickable(loginButton).isDisplayed();
+    }
+
+    public String waitForFlashMessage(String expectedText){
+
+        WebDriverWait wait =
+                new WebDriverWait(driver, Duration.ofSeconds(10));
+
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(flashMessage, expectedText));
+
+        return driver.findElement(flashMessage).getText();
     }
 }
