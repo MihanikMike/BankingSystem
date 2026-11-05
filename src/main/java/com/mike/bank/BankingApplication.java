@@ -14,17 +14,4 @@ public class BankingApplication {
 
     }
 
-    @Bean
-    CommandLineRunner loadData(BankService bankService){
-        return args -> {
-
-            bankService.addAccount(
-                    new SavingsAccount("ACC1001", 1000, "Mike")
-            );
-
-            bankService.addAccount(
-                    new SavingsAccount("ACC1002", 500, "John")
-            );
-        };
-    }
 }

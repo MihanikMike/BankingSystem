@@ -28,4 +28,9 @@ public class InMemoryAccountRepository implements AccountRepository {
         return new ArrayList<>(accountsMap.values());
     }
 
+    @Override
+    public void updateBalance(BankAccount account){
+        accountsMap.put(account.getAccountNumber(), account);
+    }
+
 }

@@ -13,5 +13,7 @@ public interface AccountRepository {
 
     List<BankAccount> findAll();
 
+    void updateBalance(BankAccount account);
+
 
 }
