@@ -18,6 +18,7 @@ public class DriverFactory {
         if(browser.equalsIgnoreCase("chrome")){
 
             ChromeOptions options = new ChromeOptions();
+            options.addArguments("--window-size=1440,1000");
 
             if(headless){
                 options.addArguments("--headless=new");

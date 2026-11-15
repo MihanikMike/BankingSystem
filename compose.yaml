@@ -11,6 +11,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/banking_db
       SPRING_DATASOURCE_USERNAME: banking_user
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      BANK_USER_PASSWORD: ${BANK_USER_PASSWORD:?BANK_USER_PASSWORD is required}
+      BANK_ADMIN_PASSWORD: ${BANK_ADMIN_PASSWORD:?BANK_ADMIN_PASSWORD is required}
 
     restart: unless-stopped
 
