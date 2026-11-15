@@ -48,18 +48,4 @@ public class SecureAreaPage extends BasePage {
         return new LoginPage(driver);
     }
 
-    @Bean
-    public JwtEncoder jwtEncoder(KeyPair jwtKeyPair) {
-        RSAPublicKey publicKey =
-                (RSAPublicKey) jwtKeyPair.getPublic();
-
-        RSAPrivateKey privateKey =
-                (RSAPrivateKey) jwtKeyPair.getPrivate();
-
-        return NimbusJwtEncoder
-                .withKeyPair(publicKey, privateKey)
-                .build();
-    }
-
-
 }

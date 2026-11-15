@@ -66,6 +66,8 @@ public class LoginPage extends BasePage {
         enterPassword(password);
         clickLogin();
 
+        wait.until(ExpectedConditions.urlContains("/secure"));
+
         return new SecureAreaPage(driver);
     }
 
