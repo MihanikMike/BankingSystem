@@ -12,6 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      BANK_USER_PASSWORD: ${{ secrets.BANK_USER_PASSWORD }}
+      BANK_ADMIN_PASSWORD: ${{ secrets.BANK_ADMIN_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -24,20 +29,19 @@ jobs:
           cache: maven
 
       - name: Start Banking API
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           docker compose up --build -d
 
       - name: Wait for Banking API
         run: |
           for i in {1..30}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            STATUS=$(curl --connect-timeout 2 --max-time 3 \
+              -s -o /dev/null -w "%{http_code}" \
               http://localhost:8080/accounts || true)
           
             echo "Attempt $i: HTTP $STATUS"
           
-            if [ "$STATUS" = "200" ]; then
+            if [ "$STATUS" = "401" ]; then
               echo "Banking API is ready"
               exit 0
             fi
@@ -50,8 +54,6 @@ jobs:
           exit 1
 
       - name: Run tests
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           mvn --batch-mode test \
             -Dheadless=true \
@@ -69,6 +71,4 @@ jobs:
 
       - name: Stop Banking API
         if: always()
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: docker compose down

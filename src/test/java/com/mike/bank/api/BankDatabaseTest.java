@@ -3,7 +3,9 @@ package com.mike.bank.api;
 import com.mike.bank.CreateAccountRequest;
 import com.mike.bank.DB.DatabaseHelper;
 import com.mike.bank.data.TestDataFactory;
+import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -11,8 +13,7 @@ import java.sql.*;
 
 
 import static io.restassured.RestAssured.given;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class BankDatabaseTest {
 
@@ -33,44 +34,48 @@ public class BankDatabaseTest {
     @Test
     void shouldReadAccountFromDatabase() throws SQLException {
 
+        RequestSpecification anonymousSpec = new RequestSpecBuilder()
+                .setBaseUri("http://localhost")
+                .setPort(8080)
+                .setContentType(ContentType.JSON)
+                .build();
+
+        String adminPassword = System.getenv("BANK_ADMIN_PASSWORD");
+        assertNotNull(adminPassword, "BANK_ADMIN_PASSWORD is not set");
+        assertFalse(adminPassword.isBlank(), "BANK_ADMIN_PASSWORD is blank");
+
+        String adminToken = AuthHelper.loginAndGetToken(
+                anonymousSpec, "admin", adminPassword
+        );
+
+        RequestSpecification adminSpec = new RequestSpecBuilder()
+                .addRequestSpecification(anonymousSpec)
+                .addHeader("Authorization", "Bearer " + adminToken)
+                .build();
+
+        BankApiClient client = new BankApiClient(adminSpec);
+
         String accountNumber = TestDataFactory.generateAccountNumber();
 
-        CreateAccountRequest request = TestDataFactory.createAccountRequest(accountNumber, 1500, "Database Test");
+        CreateAccountRequest request = TestDataFactory.createAccountRequest(
+                accountNumber, 1500, "Database Test"
+        );
+
+        client.createAccount(request)
+                .then()
+                .statusCode(201);
 
         try {
-            given()
-                    .baseUri("http://localhost")
-                    .port(8080)
-                    .contentType(ContentType.JSON)
-                    .body(request)
-                    .when()
-                    .post("/accounts")
-                    .then()
-                    .statusCode(201);
-
-            // 3. Read balance directly from PostgreSQL
             DatabaseHelper db = new DatabaseHelper();
-
-            BigDecimal actualBalance =
-                    db.getAccountBalance(accountNumber);
-
-            // 4. Verify database balance
-            BigDecimal expectedBalance = new BigDecimal("1500.00");
+            BigDecimal actualBalance = db.getAccountBalance(accountNumber);
 
             assertEquals(
                     0,
-                    expectedBalance.compareTo(actualBalance),
+                    new BigDecimal("1500.00").compareTo(actualBalance),
                     "Database balance should be 1500.00"
             );
-
         } finally {
-
-            // 5. Cleanup test data
-            given()
-                    .baseUri("http://localhost")
-                    .port(8080)
-                    .when()
-                    .delete("/accounts/{accountNumber}", accountNumber)
+            client.deleteAccount(accountNumber)
                     .then()
                     .statusCode(204);
         }

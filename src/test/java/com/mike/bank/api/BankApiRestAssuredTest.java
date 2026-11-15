@@ -1,10 +1,7 @@
 package com.mike.bank.api;
 
-import com.mike.bank.AccountResponse;
-import com.mike.bank.AmountRequest;
-import com.mike.bank.CreateAccountRequest;
+import com.mike.bank.*;
 import com.mike.bank.DB.DatabaseHelper;
-import com.mike.bank.TransferRequest;
 import com.mike.bank.data.TestDataFactory;
 import io.restassured.config.JsonConfig;
 import io.restassured.config.RestAssuredConfig;
@@ -14,8 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -28,7 +24,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 
@@ -52,7 +50,18 @@ public class BankApiRestAssuredTest {
                                 )))
                 .build();
 
-        bankApiClient = new BankApiClient(requestSpec);
+        String adminPassword = System.getenv("BANK_ADMIN_PASSWORD");
+        assertNotNull(adminPassword, "BANK_ADMIN_PASSWORD is not set");
+        assertFalse(adminPassword.isBlank(), "BANK_ADMIN_PASSWORD is blank");
+
+        String adminToken = loginAndGetToken("admin", adminPassword);
+
+        RequestSpecification adminSpec = new RequestSpecBuilder()
+                .addRequestSpecification(requestSpec)
+                .addHeader("Authorization", "Bearer " + adminToken)
+                .build();
+
+        bankApiClient = new BankApiClient(adminSpec);
 
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
@@ -70,6 +79,7 @@ public class BankApiRestAssuredTest {
                         .then()
                         .statusCode(404);
             }
+
         }finally{
             testAccountNumbers.clear();
         }
@@ -92,6 +102,12 @@ public class BankApiRestAssuredTest {
         testAccountNumbers.add(createdAccountNumber);
 
         return createdAccountNumber;
+
+    }
+
+    private static String loginAndGetToken(String username, String password){
+
+        return AuthHelper.loginAndGetToken(requestSpec, username, password);
 
     }
 
@@ -310,8 +326,7 @@ public class BankApiRestAssuredTest {
                 bankApiClient.deleteAccount(accountNumber);
 
         response
-                .then()
-                .statusCode(404)
+                .then().statusCode(404)
                 .body("error", equalTo("ACCOUNT_NOT_FOUND"))
                 .body("message", equalTo("Account "+ accountNumber + " was not found"));
     }
@@ -609,13 +624,15 @@ public class BankApiRestAssuredTest {
     @Test
     void depositValidAmountShouldUpdateBalance(){
 
-        String accountNumber = "ACC1001";
+        String accountNumber = createTestAccount( 2500, "Elen");
+
+        String token = loginAndGetToken("mike", System.getenv("BANK_USER_PASSWORD"));
 
         Response beforeResponse =
                 given()
                         .spec(requestSpec)
+                        .header("Authorization", "Bearer " + token)
                         .pathParam("accountNumber", accountNumber)
-                        .log().all()
                         .when()
                         .get("/accounts/{accountNumber}");
 
@@ -624,13 +641,7 @@ public class BankApiRestAssuredTest {
         AmountRequest depositRequest = new AmountRequest();
         depositRequest.setAmount(200);
 
-        Response depositResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParam("accountNumber", accountNumber)
-                        .body(depositRequest)
-                  .when()
-                         .post("/accounts/{accountNumber}/deposit");
+        Response depositResponse = bankApiClient.deposit(accountNumber, depositRequest);
 
         depositResponse
                 .then()
@@ -641,39 +652,23 @@ public class BankApiRestAssuredTest {
         float balanceAfter = afterResponse.jsonPath().getFloat("balance");
 
         assertEquals(balanceBefore + 200, balanceAfter, 0.01f);
-
     }
 
     @Test
     void depositNegativeAmountShouldReturn400(){
 
-        String accountNumber = "ACC1002";
+        String accountNumber = createTestAccount(1500, "Anna");
 
-        Response beforeResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParam("accountNumber", accountNumber)
-                        .log().all()
-                        .when()
-                        .get("/accounts/{accountNumber}");
-        beforeResponse
-                .then()
-                .statusCode(200);
+        Response beforeResponse = bankApiClient.getAccount(accountNumber);
+
+        beforeResponse.then().statusCode(200);
 
         float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
 
         AmountRequest depositRequest = new AmountRequest();
         depositRequest.setAmount(-200);
 
-        Response depositResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParam("accountNumber", accountNumber)
-                        .body(depositRequest)
-                        .when()
-                        .post("accounts/{accountNumber}/deposit");
-
-        depositResponse
+        bankApiClient.deposit(accountNumber, depositRequest)
                 .then()
                 .statusCode(400);
 
@@ -692,65 +687,22 @@ public class BankApiRestAssuredTest {
     @ValueSource(ints = {0, -1, -100, -9999})
     void depositInvalidAmountShouldReturn400(int amount) {
 
-        String accountNumber = TestDataFactory.generateAccountNumber();
+        String accountNumber = createTestAccount(2000, "Invalid Amount Test");
 
-        CreateAccountRequest request = TestDataFactory.createAccountRequest(accountNumber, 2000, "Invalid Amount Test");
-
-        String createdAccountNumber =
-                given()
-                        .spec(requestSpec)
-                        .body(request)
-                        .when()
-                        .post("/accounts")
-                        .then()
-                        .statusCode(201)
-                        .extract()
-                        .path("accountNumber");
-
-        AmountRequest depositRequest = new AmountRequest();
-
-        Response beforeResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParam("accountNumber", createdAccountNumber)
-                        .log().all()
-                        .when()
-                        .get("accounts/{accountNumber}");
-
-        beforeResponse
-                .then()
-                .statusCode(200);
-
-        testAccountNumbers.add(accountNumber);
+        Response beforeResponse = bankApiClient.getAccount(accountNumber);
+        beforeResponse.then().statusCode(200);
 
         float balanceBefore = beforeResponse.jsonPath().getFloat("balance");
 
+        AmountRequest depositRequest = new AmountRequest();
         depositRequest.setAmount(amount);
 
-        Response depositResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParams("accountNumber", createdAccountNumber)
-                        .body(depositRequest)
-                        .when()
-                        .post("accounts/{accountNumber}/deposit");
-
-        depositResponse
+        bankApiClient.deposit(accountNumber, depositRequest)
                 .then()
                 .statusCode(400);
 
-
-        Response afterResponse =
-                given()
-                        .spec(requestSpec)
-                        .pathParam("accountNumber", createdAccountNumber)
-                        .log().all()
-                        .when()
-                        .get("accounts/{accountNumber}");
-
-        afterResponse
-                .then()
-                .statusCode(200);
+        Response afterResponse = bankApiClient.getAccount(accountNumber);
+        afterResponse.then().statusCode(200);
 
         float balanceAfter = afterResponse.jsonPath().getFloat("balance");
 
@@ -1089,6 +1041,263 @@ public class BankApiRestAssuredTest {
         assertEquals(0, senderBefore.compareTo(senderAfter), "Sender balance should remain unchanged");
         assertEquals(0, receiverBefore.compareTo(receiverAfter), "Receiver balance should remain unchanged");
 
+    }
+
+    @Test
+    void getAccountsWithoutTokenShouldReturn401(){
+
+        given()
+                .spec(requestSpec)
+                .when()
+                .get("/accounts")
+                .then()
+                .statusCode(401);
+    }
+
+    @Test
+    void getAccountsWithInvalidTokenShouldReturn401(){
+
+        given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer invalid-token")
+                .when()
+                .get("/accounts")
+                .then()
+                .statusCode(401);
+    }
+
+    @Test
+    void getAccountsWithValidTokenShouldReturn200(){
+
+        String validToken = loginAndGetToken("mike",
+                System.getenv("BANK_USER_PASSWORD"));
+
+        given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + validToken)
+                .when()
+                .get("/accounts")
+                .then()
+                .statusCode(200);
+    }
+
+    @Test
+    void loginWithValidCredentialsShouldReturnToken(){
+
+        String password = System.getenv("BANK_USER_PASSWORD");
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername("mike");
+        request.setPassword(password);
+
+        given()
+                .spec(requestSpec)
+                .body(request)
+        .when()
+                .post("/auth/login")
+        .then()
+                .statusCode(200)
+                .body("token", not(isEmptyOrNullString()));
+    }
+
+    @Test
+    void validTokenShouldAllowReadingAccounts(){
+        String password = System.getenv("BANK_USER_PASSWORD");
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername("mike");
+        request.setPassword(password);
+
+        String token = given()
+                .spec(requestSpec)
+                .body(request)
+                .when()
+                .post("/auth/login")
+                .then()
+                .statusCode(200)
+                .body("token", not(isEmptyOrNullString()))
+                .extract()
+                .path("token");
+
+        Response response = given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + token)
+                .when()
+                .get("/accounts");
+
+        response.then().statusCode(200);
+    }
+
+    @Test
+    void loginWithWrongPasswordShouldReturn401(){
+
+        String wrongPassword = "9999";
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername("mike");
+        request.setPassword(wrongPassword);
+
+        given()
+                .spec(requestSpec)
+                .body(request)
+                .when()
+                .post("/auth/login")
+                .then()
+                .statusCode(401);
+    }
+
+    @Test
+    void loginWithUnknownUsernameShouldReturn401(){
+
+        String nonexistentUser = "Ddgg";
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername(nonexistentUser);
+        request.setPassword("irrelevant-test-password");
+
+        given()
+                .spec(requestSpec)
+                .body(request)
+                .when()
+                .post("/auth/login")
+                .then()
+                .statusCode(401);
+    }
+
+    @Test
+    void tamperedTokenShouldReturn401(){
+
+        String password = System.getenv("BANK_USER_PASSWORD");
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername("mike");
+        request.setPassword(password);
+
+        String token = given()
+                .spec(requestSpec)
+                .body(request)
+                .when()
+                .post("/auth/login")
+                .then()
+                .statusCode(200)
+                .body("token", not(isEmptyOrNullString()))
+                .extract()
+                .path("token");
+
+        String[] parts = token.split("\\.");
+        String header = parts[0];
+        String payload = parts[1];
+        String signature = parts[2];
+
+        String decodedPayload = new String(
+                Base64.getUrlDecoder().decode(payload),
+                StandardCharsets.UTF_8
+        );
+
+        String modifiedPayload = decodedPayload.replace(
+                "\"sub\":\"mike\"",
+                "\"sub\":\"admin\""
+        );
+
+        String encodedModifiedPayload = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(modifiedPayload.getBytes(StandardCharsets.UTF_8));
+
+        assertNotEquals(decodedPayload, modifiedPayload, "Payload must change before sending the tampered token");
+
+        String tamperedToken = String.join(".",
+                header,encodedModifiedPayload,signature);
+
+        given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + tamperedToken)
+                .when()
+                .get("/accounts")
+                .then()
+                .statusCode(401);
+    }
+
+    @Test
+    void userShouldNotBeAllowedToDeleteAccount(){
+
+        String password = System.getenv("BANK_USER_PASSWORD");
+
+        String token = loginAndGetToken("mike", password);
+
+        Response deleteResponse = given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + token)
+                .when()
+                .delete("/accounts/SECURITY-NONEXISTENT");
+
+        deleteResponse.then().statusCode(403);
+    }
+
+    @Test
+    void adminShouldReachDeleteEndpoint(){
+
+        String token = loginAndGetToken("admin", System.getenv("BANK_ADMIN_PASSWORD"));
+
+        Response deleteResponse = given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + token)
+                .when()
+                .delete("/accounts/SECURITY-NONEXISTENT");
+
+        deleteResponse.then().statusCode(404).body("error", equalTo("ACCOUNT_NOT_FOUND"));
+    }
+
+    @Test
+    void userShouldNotDeleteExistingAccount(){
+
+        String user = "mike";
+        String password = System.getenv("BANK_USER_PASSWORD");
+        String testAccount = createTestAccount(1000, "Security Test");
+
+        String userToken = loginAndGetToken(user, password);
+
+        Response deleteResponse = given()
+                .spec(requestSpec)
+                .header("Authorization", "Bearer " + userToken)
+                .pathParam("accountNumber", testAccount)
+                .when()
+                .delete("/accounts/{accountNumber}");
+
+        deleteResponse
+                .then()
+                .statusCode(403);
+
+        Response accountResponse = bankApiClient.getAccount(testAccount);
+
+        accountResponse.then().statusCode(200)
+                .body("accountNumber", equalTo(testAccount))
+                .body("owner", equalTo("Security Test"));
+
+        BigDecimal actualBalance = accountResponse.jsonPath()
+                .get("balance");
+
+        assertEquals(
+                0,
+                new BigDecimal("1000").compareTo(actualBalance),
+                "Balance must remain unchanged after forbidden DELETE"
+        );
+
+    }
+
+    @Test
+    void adminShouldDeleteExistingAccount(){
+
+        String accountNumber = createTestAccount(2000, "Inna");
+
+        Response deleteResponse = bankApiClient.deleteAccount(accountNumber);
+
+        deleteResponse.then().statusCode(204);
+
+        Response getResponse = bankApiClient.getAccount(accountNumber);
+
+        getResponse.then().statusCode(404)
+                .body("error", equalTo("ACCOUNT_NOT_FOUND"));
+
+        testAccountNumbers.remove(accountNumber);
     }
 
 }
